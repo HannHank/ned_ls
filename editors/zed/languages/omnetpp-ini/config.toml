@@ -1,0 +1,4 @@
+name = "OMNeT++ INI"
+grammar = "omnetpp_ini"
+path_suffixes = ["ini"]
+line_comments = ["#"]

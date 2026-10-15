@@ -1,0 +1,46 @@
+[package]
+name = "ned_ls"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+tower-lsp = "0.20.0"
+tokio = { version = "1.52.3", features = ["full"] }
+tree-sitter-ned = { git = "https://github.com/HannHank/tree-sitter-ned", branch = "massaged_grammar" }
+tree-sitter-omnetpp-ini = { git = "https://github.com/HannHank/tree-sitter-ini"}
+tree-sitter = "0.27.0"
+walkdir = "2.5.0"
+dashmap = "6.1.0"
+ropey = "1.6.1"
+oxc_index = "5.0.0"
+regex = "1.12.2"
+log = "0.4.28"
+toml = "1.0.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
+home = "0.5.11"
+salsa = { version = "0.28", default-features = true, features = [
+    "rayon",
+    "salsa_unstable",
+    "macros",
+] }
+eyre = "0.6.12"
+rayon = "1.12.0"
+futures = "0.3.31"
+tokio-util = "0.7.18"
+rustc-hash = "2.1.2"
+env_logger = "0.11.11"
+toml_edit = "0.25.15"
+
+[profile.release]
+debug = true
+
+
+[dev-dependencies]
+tempfile = "3"
+annotate-snippets = "0.12.0"
+
+[build-dependencies]
+cc="*"
+

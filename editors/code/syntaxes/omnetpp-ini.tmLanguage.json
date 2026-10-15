@@ -1,0 +1,119 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "OMNeT++ INI",
+  "scopeName": "source.ini.omnetpp",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#sections" },
+    { "include": "#xml-block" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#wildcards" },
+    { "include": "#keys" },
+    { "include": "#constants" },
+	{ "include": "#json-objects" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.omnetpp-ini"
+    },
+    "sections": {
+      "match": "^\\s*(\\[)(.*?)(\\])",
+      "captures": {
+        "1": { "name": "punctuation.definition.bracket.omnetpp-ini" },
+        "2": { "name": "entity.name.type.class.omnetpp-ini" },
+        "3": { "name": "punctuation.definition.bracket.omnetpp-ini" }
+      }
+    },
+    "keywords": {
+      "match": "^\\s*(network|extends|description|fallback-to|experiment|measurement|replication|repeat|seed-set|sim-time-limit|cpu-time-limit|real-time-limit|warmup-period|simtime-resolution|simtime-scale|warnings|debug-on-errors|print-undisposed|parameter-mutability-check|debugger-attach-on-startup|debugger-attach-on-error|debugger-attach-command|debugger-attach-wait-time|check-signals|debug-statistics-recording|result-dir|record-eventlog|eventlog-file|fingerprint|record-scalar-results|output-scalar-file|output-scalar-file-append|output-scalar-precision|scalar-recording|bin-recording|param-recording|record-vector-results|output-vector-file|output-vector-file-append|output-vector-precision|vector-recording|vector-record-empty|vector-record-eventnumbers|vector-recording-intervals|output-vectors-memory-limit|vector-buffer|parallel-simulation|parsim-num-partitions|partition-id|image-path|fname-append-host|ned-path|ned-package-exclusions|total-stack|scheduler-class|parsim-communications-class|parsim-synchronization-class|eventlogmanager-class|outputvectormanager-class|outputscalarmanager-class|snapshotmanager-class|futureeventset-class|fingerprintcalculator-class|rng-class|num-rngs|load-libs|configuration-class|user-interface)\\b",
+      "name": "keyword.control.omnetpp-ini"
+    },
+    "wildcards": {
+      "match": "\\*\\*",
+      "name": "constant.language.wildcard.omnetpp-ini"
+    },
+    "keys": {
+      "match": "^\\s*([^=]+?)\\s*(=)",
+      "captures": {
+        "1": { "name": "variable.name.property.omnetpp-ini" },
+        "2": { "name": "keyword.operator.assignment.omnetpp-ini" }
+      }
+    },
+	"json-objects": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z0-9_]+)\\s*(:)",
+          "captures": {
+            "1": { "name": "variable.other.property.omnetpp-ini" },
+            "2": { "name": "keyword.operator.assignment.omnetpp-ini" }
+          }
+        },
+        {
+          "match": "\\[|\\]",
+          "name": "punctuation.definition.array.omnetpp-ini"
+        },
+        {
+          "match": "\\{|\\}",
+          "name": "punctuation.definition.dictionary.omnetpp-ini"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.sequence.omnetpp-ini"
+        },
+        {
+          "match": "\\b(true|false)\\b",
+          "name": "constant.language.boolean.omnetpp-ini"
+        },
+        {
+          "match": "\\b-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b",
+          "name": "constant.numeric.omnetpp-ini"
+        }
+      ]
+    },
+	"xml-block": {
+      "begin": "\\b(xml)\\s*\\(\\s*(['\"])",
+      "beginCaptures": {
+        "1": { "name": "support.function.builtin.omnetpp-ini" },
+        "2": { "name": "punctuation.definition.string.begin.omnetpp-ini" }
+      },
+      "end": "(\\2)\\s*\\)",
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.string.end.omnetpp-ini" }
+      },
+      "contentName": "text.xml",
+      "patterns": [
+        { "include": "text.xml" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "begin": "\"",
+          "end": "\"",
+          "name": "string.quoted.double.omnetpp-ini",
+          "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.omnetpp-ini" }]
+        },
+        {
+          "begin": "'",
+          "end": "'",
+          "name": "string.quoted.single.omnetpp-ini",
+          "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.omnetpp-ini" }]
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "match": "\\b(true|false|yes|no)\\b",
+          "name": "constant.language.boolean.omnetpp-ini"
+        },
+        {
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\s*(s|ms|us|ns|ps|d|h|m|bps|kbps|Mbps|Gbps|B|KiB|MiB|Hz|kHz|MHz|GHz|W|mW)?\\b",
+          "name": "constant.numeric.omnetpp-ini"
+        }
+      ]
+    }
+  }
+}

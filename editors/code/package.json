@@ -1,0 +1,119 @@
+{
+	"name": "ned-language-client",
+	"publisher": "hannhank",
+	"displayName": "OMNeT++ NED Language Server",
+	"description": "ned rust language server",
+	"license": "MIT OR Apache-2.0",
+	"version": "0.1.0",
+	"engines": {
+		"vscode": "^1.125.0"
+	},
+	"dependencies": {
+		"vscode-languageclient": "10.1.2"
+	},
+	"devDependencies": {
+		"@types/mocha": "10.0.10",
+		"@types/node": "22.20.5",
+		"@types/vscode": "1.125.0",
+		"@typescript-eslint/eslint-plugin": "^8.65.0",
+		"@typescript-eslint/parser": "^8.65.0",
+		"@vscode/test-electron": "^3.0.0",
+		"@vscode/vsce": "^4.0.0",
+		"cross-env": "^10.1.0",
+		"esbuild": "^0.28.1",
+		"eslint": "10.12.0",
+		"glob": "13.0.6",
+		"mocha": "12.0.3",
+		"npm-run-all2": "^9.0.2",
+		"ts-loader": "^9.6.2",
+		"typescript": "6.0.3",
+		"vscode-uri": "^3.1.0"
+	},
+	"categories": [],
+	"keywords": [
+		"language-server",
+		"tower-lsp"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/HannHank/ned_ls"
+	},
+	"enabledApiProposals": [],
+	"activationEvents": [
+		"onLanguage:OMNeT++ NED",
+		"onLanguage:OMNeT++ INI",
+		"workspaceContains:**/*.ned",
+		"workspaceContains:**/*.ini"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"languages": [
+			{
+				"id": "OMNeT++ NED",
+				"aliases": [
+					"OMNeT++ NED",
+					"ned"
+				],
+				"extensions": [
+					".ned"
+				]
+			},
+			{
+				"id": "OMNeT++ INI",
+				"aliases": [
+					"OMNeT++ INI",
+					"ini"
+				],
+				"extensions": [
+					".ini"
+				]
+			}
+		],
+		"grammars": [
+			{
+				"language": "OMNeT++ INI",
+				"scopeName": "source.ini.omnetpp",
+				"path": "./syntaxes/omnetpp-ini.tmLanguage.json",
+				"embeddedLanguages": {
+					"text.xml": "xml"
+				}
+			}
+		],
+		"configuration": {
+			"type": "object",
+			"title": "ned-language-server",
+			"properties": {
+				"ned-language-server.trace.server": {
+					"type": "string",
+					"scope": "window",
+					"enum": [
+						"off",
+						"messages",
+						"verbose"
+					],
+					"enumDescriptions": [
+						"No traces",
+						"Error only",
+						"Full log"
+					],
+					"default": "off",
+					"description": "Traces the communication between VS Code and the language server."
+				},
+				"ned.serverPath": {
+					"type": "string",
+					"default": "",
+					"description": "Absolute path to the ned language server executable. If empty, the extension will try to find it in the system PATH."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"compile": "npm run check-types && node esbuild.js --production",
+		"check-types": "tsc --noEmit",
+		"watch": "npm-run-all -p watch:*",
+		"watch:esbuild": "node esbuild.js --watch",
+		"watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+		"package": "vsce package --no-dependencies"
+	},
+	"packageManager": "pnpm@12.9.1"
+}

@@ -1,0 +1,244 @@
+name: Release
+
+# Push a tag like `v0.1.0` to build all binaries →  create a GitHub Release and
+# package one VS Code extension per platform.
+# For example: git tag v0.1.0 && git push github v0.1.0
+#
+#
+# Tags containing a `-` (e.g. `v0.1.0-rc.1`) become GitHub pre-releases and are
+# never published to the marketplaces. 
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-version:
+    name: Check versions match tag
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare tag with Cargo.toml and package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cargo_version=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
+          code_version=$(node -p "require('./editors/code/package.json').version")
+          echo "tag=$tag cargo=$cargo_version vscode=$code_version"
+          # pre-release suffixes (-rc.1) are only checked for the base version
+          base="${tag%%-*}"
+          if [ "$cargo_version" != "$base" ] || [ "$code_version" != "$base" ]; then
+            echo "::error::Version mismatch: tag $tag, Cargo.toml $cargo_version, package.json $code_version"
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: check-version
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds run on 22.04 so the binary works with glibc >= 2.35
+          # I could also switch to unknown-linux-musl
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            vscode: linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            vscode: linux-arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            vscode: darwin-x64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            vscode: darwin-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            vscode: win32-x64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # assets the Zed extension downloads: ned_ls-<target>.tar.gz / .zip
+      # code does not need it because the executable is directly bundled into the .vsix
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          staging="ned_ls-${{ matrix.target }}"
+          mkdir -p "$staging" dist
+          cp "target/${{ matrix.target }}/release/ned_ls" "$staging/"
+          cp LICENSE-MIT LICENSE-APACHE README.md "$staging/"
+          tar -czf "dist/$staging.tar.gz" -C "$staging" .
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $staging = "ned_ls-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path $staging, dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/ned_ls.exe" $staging
+          Copy-Item LICENSE-MIT, LICENSE-APACHE, README.md $staging
+          Compress-Archive -Path "$staging/*" -DestinationPath "dist/$staging.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.vscode }}
+          path: dist/*
+          if-no-files-found: error
+
+  vscode:
+    name: Package VS Code extension
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { vscode: linux-x64, target: x86_64-unknown-linux-gnu, ext: tar.gz }
+          - { vscode: linux-arm64, target: aarch64-unknown-linux-gnu, ext: tar.gz }
+          - { vscode: darwin-x64, target: x86_64-apple-darwin, ext: tar.gz }
+          - { vscode: darwin-arm64, target: aarch64-apple-darwin, ext: tar.gz }
+          - { vscode: win32-x64, target: x86_64-pc-windows-msvc, ext: zip }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: editors/code/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: editors/code/pnpm-lock.yaml
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-${{ matrix.vscode }}
+          path: server
+
+      # Each VSIX bundles exactly one binary as bin/ned_ls[.exe]
+      - name: Place server binary
+        run: |
+          mkdir -p editors/code/bin
+          archive="server/ned_ls-${{ matrix.target }}.${{ matrix.ext }}"
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            unzip -j "$archive" ned_ls.exe -d editors/code/bin
+          else
+            tar -xzf "$archive" -C editors/code/bin ./ned_ls
+            chmod +x editors/code/bin/ned_ls
+          fi
+          cp README.md editors/code/README.md
+          ls -la editors/code/bin
+
+      - name: Install dependencies
+        working-directory: editors/code
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension
+        working-directory: editors/code
+        run: pnpm run compile
+
+      - name: Package VSIX
+        working-directory: editors/code
+        run: pnpm exec vsce package --no-dependencies --target ${{ matrix.vscode }} --out ../../ned_ls-${{ matrix.vscode }}.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.vscode }}
+          path: ned_ls-${{ matrix.vscode }}.vsix
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: [build, vscode]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: assets
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+
+  publish-vscode:
+    name: Publish to VS Code Marketplace
+    needs: release
+    if: ${{ vars.PUBLISH_VSCODE == 'true' && !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: vsix
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          for f in vsix/*.vsix; do
+            npx --yes @vscode/vsce publish --packagePath "$f"
+          done
+
+  publish-ovsx:
+    name: Publish to Open VSX
+    needs: release
+    if: ${{ vars.PUBLISH_OVSX == 'true' && !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: vsix-*
+          path: vsix
+          merge-multiple: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Publish
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          for f in vsix/*.vsix; do
+            npx --yes ovsx publish "$f" -p "$OVSX_PAT"
+          done

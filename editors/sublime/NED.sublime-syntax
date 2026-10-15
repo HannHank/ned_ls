@@ -1,0 +1,43 @@
+%YAML 1.2
+---
+# I used the TEXTMATE grammar from opp as a base
+name: NED
+scope: source.ned
+version: 2
+
+file_extensions:
+  - ned
+
+contexts:
+  main:
+    - match: '//.*$'
+      scope: comment.line.double-slash.ned
+    - match: '@[a-zA-Z]+'
+      scope: entity.name.tag.ned
+    - match: '"'
+      scope: punctuation.definition.string.begin.ned
+      push: string
+    - match: '<-->|-->|<--'
+      scope: keyword.operator.arrow.ned
+    - match: '\.\.'
+      scope: keyword.operator.range.ned
+    - match: '\b(?:inout|input|output|bool|double|int|string|object|xml|volatile)\b'
+      scope: storage.type.common.ned
+    - match: '\b(?:true|false|undefined|nan|inf|null|nullptr)\b'
+      scope: constant.language.ned
+    - match: '\b(?:channel|channelinterface|simple|module|network|moduleinterface|parameters|gates|types|submodules|connections|allowunconnected|extends|for|if|import|like|package|property|parent)\b'
+      scope: keyword.other.ned
+    - match: '\b(?:sizeof|const|default|ask|this|index|typename)\b'
+      scope: keyword.other.ned
+    - match: '\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b'
+      scope: constant.numeric.ned
+
+  string:
+    - meta_scope: string.quoted.double.ned
+    - match: '\\.'
+      scope: constant.character.escape.ned
+    - match: '"'
+      scope: punctuation.definition.string.end.ned
+      pop: true
+    - match: '$'
+      pop: true

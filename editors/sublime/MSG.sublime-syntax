@@ -1,0 +1,36 @@
+%YAML 1.2
+---
+# I used the TEXTMATE grammar from opp as a base
+
+name: MSG
+scope: source.msg
+version: 2
+
+file_extensions:
+  - msg
+
+contexts:
+  main:
+    - match: '//.*$'
+      scope: comment.line.double-slash.msg
+    - match: '@[a-zA-Z]+'
+      scope: entity.name.tag.msg
+    - match: '"'
+      scope: punctuation.definition.string.begin.msg
+      push: string
+    - match: '\b(?:cplusplus|namespace|struct|message|packet|class|enum|extends|import)\b'
+      scope: keyword.other.msg
+    - match: '\b(?:abstract|bool|char|short|int|long|float|double|unsigned|string|simtime_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|int16|int32|int64|uint8|uint16|uint32|uint64)\b'
+      scope: storage.type.common.msg
+    - match: '\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b'
+      scope: constant.numeric.msg
+
+  string:
+    - meta_scope: string.quoted.double.msg
+    - match: '\\.'
+      scope: constant.character.escape.msg
+    - match: '"'
+      scope: punctuation.definition.string.end.msg
+      pop: true
+    - match: '$'
+      pop: true

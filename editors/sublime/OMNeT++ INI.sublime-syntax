@@ -1,0 +1,78 @@
+%YAML 1.2
+---
+name: OMNeT++ INI
+scope: source.ini.omnetpp
+version: 2
+
+# extension as... > OMNeT++ INI for other files
+# TODO: maybe I need to change this for all editors in order to avoid conflicts with other ini files not related to opp
+file_extensions:
+  - omnetpp.ini
+
+contexts:
+  main:
+    - match: '#.*$'
+      scope: comment.line.number-sign.omnetpp-ini
+    - match: '^\s*(\[)(.*?)(\])'
+      captures:
+        1: punctuation.definition.bracket.omnetpp-ini
+        2: entity.name.type.class.omnetpp-ini
+        3: punctuation.definition.bracket.omnetpp-ini
+    - match: '\b(xml)\s*\(\s*(["''])'
+      captures:
+        1: support.function.builtin.omnetpp-ini
+        2: punctuation.definition.string.begin.omnetpp-ini
+      embed: scope:text.xml
+      embed_scope: text.xml.embedded.omnetpp-ini
+      escape: '\2\s*\)'
+      escape_captures:
+        0: punctuation.definition.string.end.omnetpp-ini
+    - match: '"'
+      scope: punctuation.definition.string.begin.omnetpp-ini
+      push: double-string
+    - match: "'"
+      scope: punctuation.definition.string.begin.omnetpp-ini
+      push: single-string
+    - match: '^\s*(network|extends|description|fallback-to|experiment|measurement|replication|repeat|seed-set|sim-time-limit|cpu-time-limit|real-time-limit|warmup-period|simtime-resolution|simtime-scale|warnings|debug-on-errors|print-undisposed|parameter-mutability-check|debugger-attach-on-startup|debugger-attach-on-error|debugger-attach-command|debugger-attach-wait-time|check-signals|debug-statistics-recording|result-dir|record-eventlog|eventlog-file|fingerprint|record-scalar-results|output-scalar-file|output-scalar-file-append|output-scalar-precision|scalar-recording|bin-recording|param-recording|record-vector-results|output-vector-file|output-vector-file-append|output-vector-precision|vector-recording|vector-record-empty|vector-record-eventnumbers|vector-recording-intervals|output-vectors-memory-limit|vector-buffer|parallel-simulation|parsim-num-partitions|partition-id|image-path|fname-append-host|ned-path|ned-package-exclusions|total-stack|scheduler-class|parsim-communications-class|parsim-synchronization-class|eventlogmanager-class|outputvectormanager-class|outputscalarmanager-class|snapshotmanager-class|futureeventset-class|fingerprintcalculator-class|rng-class|num-rngs|load-libs|configuration-class|user-interface)\b'
+      captures:
+        1: keyword.control.omnetpp-ini
+    - match: '\*\*'
+      scope: constant.language.wildcard.omnetpp-ini
+    - match: '^\s*([^=]+?)\s*(=)'
+      captures:
+        1: variable.name.property.omnetpp-ini
+        2: keyword.operator.assignment.omnetpp-ini
+    - match: '\b(true|false|yes|no)\b'
+      scope: constant.language.boolean.omnetpp-ini
+    - match: '\b[0-9]+(\.[0-9]+)?\s*(s|ms|us|ns|ps|d|h|m|bps|kbps|Mbps|Gbps|B|KiB|MiB|Hz|kHz|MHz|GHz|W|mW)?\b'
+      scope: constant.numeric.omnetpp-ini
+    - match: '\b([a-zA-Z0-9_]+)\s*(:)'
+      captures:
+        1: variable.other.property.omnetpp-ini
+        2: keyword.operator.assignment.omnetpp-ini
+    - match: '[\[\]]'
+      scope: punctuation.definition.array.omnetpp-ini
+    - match: '[{}]'
+      scope: punctuation.definition.dictionary.omnetpp-ini
+    - match: ','
+      scope: punctuation.separator.sequence.omnetpp-ini
+
+  double-string:
+    - meta_scope: string.quoted.double.omnetpp-ini
+    - match: '\\.'
+      scope: constant.character.escape.omnetpp-ini
+    - match: '"'
+      scope: punctuation.definition.string.end.omnetpp-ini
+      pop: true
+    - match: '$'
+      pop: true
+
+  single-string:
+    - meta_scope: string.quoted.single.omnetpp-ini
+    - match: '\\.'
+      scope: constant.character.escape.omnetpp-ini
+    - match: "'"
+      scope: punctuation.definition.string.end.omnetpp-ini
+      pop: true
+    - match: '$'
+      pop: true
