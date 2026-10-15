@@ -1,5 +1,5 @@
 {
-	"name": "ned-language-client",
+	"name": "ned-ls",
 	"publisher": "hannhank",
 	"displayName": "OMNeT++ NED Language Server",
 	"description": "ned rust language server",
