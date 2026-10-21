@@ -54,6 +54,10 @@ pub struct Config {
     pub imported_projects: HashSet<PathBuf>,
     pub project_root: Url,
     pub nedfolders: Vec<PathBuf>,
+    // Ned_ls.toml exists → opp workspace
+    pub has_config_file: bool,
+    /// A .nedfolders file exists → opp workspace
+    pub has_nedfolders: bool,
 }
 
 #[repr(u8)]
@@ -495,6 +499,21 @@ impl LanguageServer for Backend {
                 .log_message(MessageType::INFO, "[+] All projects indexed successfully.")
                 .await;
 
+            // server should stay silent if the workspace is not an opp workspace
+            let is_omnetpp = {
+                let db = shared_state.db.lock().await;
+                crate::workspace_membership::is_omnetpp_workspace(&*db)
+            };
+            if !is_omnetpp {
+                shared_state
+                    .client
+                    .log_message(
+                        MessageType::INFO,
+                        "[*] No NED files, .nedfolders or Ned_ls.toml found → INI features are disabled for this workspace.",
+                    )
+                    .await;
+            }
+
             worker.start(); // start the incremental parsing worker after indexing
             shared_state
                 .state
@@ -571,6 +590,10 @@ impl LanguageServer for Backend {
 
         if uri.as_str().ends_with(".ini") {
             let db = self.shared.db.lock().await.clone();
+            // INI files of unrelated projects should not get opp suggestions
+            if !crate::workspace_membership::is_omnetpp_workspace(&db) {
+                return Ok(None);
+            }
             let items = salsa::Cancelled::catch(std::panic::AssertUnwindSafe(|| {
                 db.get_source_file_input(uri).map(|ini_file| {
                     let rope = ini_file.rope(&db);

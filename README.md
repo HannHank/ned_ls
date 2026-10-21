@@ -1,8 +1,12 @@
 # ned_ls
 
 <!--toc:start-->
-- [ned_ls](#nedls)
+- [ned_ls](#ned_ls)
+  - [About](#about)
   - [Features](#features)
+    - [NED](#ned)
+    - [INI](#ini)
+  - [Installation](#installation)
   - [Configure](#configure)
   - [Editors](#editors)
     - [Sublime-Text](#sublime-text)
@@ -18,7 +22,7 @@
 
 > A simple language server for OMNeT++ simulation framework, supporting `ned` and `ini` files.
 
-# About
+## About
 ned_ls is an independent project and is not affiliated with OMNeT++ or OpenSim Ltd.
 I started it in November 2025 to make my own OMNeT++ simulation work more pleasant,
 and it grew feature by feature from there. This GitHub repository is the upstream
@@ -36,7 +40,7 @@ workflows, but expect rough edges in less common NED/INI constructs.
   and allowed most of the later features. Some older building blocks (like the
   Tree-sitter-based parsing) would be worth replacing at some point.
 - I wrote the vast majority of this code myself and carefully reviewed the rest. Because I was short on time, I used AI to generate tests that mostly just cover the parsing and utility functions. I am planning a manual rewrite soon to improve this setup and increase coverage.
-
+- The language server does not really know about different NED versions. In hindsight, I should have thought about that earlier. So far it only covers fairly basic constructs, so I have not run into any version problems, but I also have not tested it much.
 ## Features
 
 ### NED
@@ -53,7 +57,7 @@ workflows, but expect rough edges in less common NED/INI constructs.
     - inheritance rules (cyclic `extends`)
     - interface conformance (missing gates/parameters, direction or vector mismatches → some missing edge cases)
     - connections (unknown gate, wrong direction, missing vector index, basic $i/$o misuse detection)
-    - duplicate submodules and parameter used before they are declared
+    - duplicate submodules and parameters used before they are declared
 
 ### INI
 - **Completion** for configuration options, parameter keys of the selected network, and extends
@@ -64,6 +68,17 @@ workflows, but expect rough edges in less common NED/INI constructs.
     - wrong value types for built-in options
     - duplicates keys
     - circular `extends` between sections
+
+## Installation
+
+VS Code users can skip this: the extension ships with the language server (see [VS Code](#vs-code)).
+
+For all other editors, either download a prebuilt binary from the
+[Releases page](https://github.com/HannHank/ned_ls/releases) or build it from source, which requires a Rust toolchain and a C compiler (because of Tree-sitter): 
+
+```bash
+cargo install --git https://github.com/HannHank/ned_ls
+```
 
 ## Configure
 
@@ -86,15 +101,15 @@ imported_projects = [
 - Emacs
 - Helix
 - Lapce
-- [Sublime-Text](#Sublime-Text)
+- [Sublime-Text](#sublime-text)
 - [VS Code](#vs-code)
 - [Vim or Neovim](#neovim)
 - [Zed](#zed)
 
 ### Sublime-Text
 
-> ![INFO]
-> Assuming the language server is downloaded and built using `cargo build --release`
+> [!NOTE]
+> Assuming `ned_ls` is installed (see [Installation](#installation)). 
 
 #### 1. Install the Syntax Package
 
@@ -150,21 +165,25 @@ Paste the following into the file and save:
 
 ### Neovim
 
-Quick installation, thanks to the native LSP-Client. 
+Quick configuration, thanks to the native LSP-Client. 
 ```lua 
+-- Neovim does not know .ned files by default
+vim.filetype.add({ extension = { ned = "ned" } })
+
 local capabilities = vim.lsp.protocol.make_client_capabilities()
 capabilities.workspace.didChangeWatchedFiles.dynamicRegistration = true -- enable file watching
 
 vim.api.nvim_create_autocmd("FileType", {
-	pattern = {"ned", "msg"},
+	pattern = {"ned", "dosini"}, -- Neovim uses the filetype "dosini" for .ini files
 	callback = function()
 		-- vim.lsp.set_log_level("info")
 		vim.lsp.start({
 			name = "ned_ls",
 			cmd = { "<path-to-ls>/ned_ls" },
+			capabilities = capabilities,
 			-- capabilities = require("cmp_nvim_lsp").default_capabilities(), might be used in the future for more complex completion support
 			root_dir = vim.loop.cwd(),
-			filetypes = { "ned", "msg" },
+			filetypes = { "ned", "dosini" },
 		})
 	end,
 })
@@ -178,7 +197,7 @@ Since VIM does not offer a native LSP-Client implementation like Neovim, we need
 Plug 'prabirshrestha/vim-lsp'
 ```
 
-Now we can tell vim to start the language server on `.ned` files. TODO: update if `msg` and `ini` files are supported 
+Now we can tell vim to start the language server on `.ned` and `.ini` files (Vim uses the filetype `dosini` for `.ini` files):
 ```vim
 if executable('ned_ls')
   augroup NedLSP
@@ -186,7 +205,7 @@ if executable('ned_ls')
     autocmd User lsp_setup call lsp#register_server({
     \ 'name': 'ned_ls',
     \ 'cmd': {server_info->['ned_ls']},
-    \ 'whitelist': ['ned', 'msg'],
+    \ 'whitelist': ['ned', 'dosini'],
     \ })
   augroup END
 endif
@@ -194,8 +213,9 @@ endif
 This requires that `ned_ls` is on your `$PATH`.
 
 <details>
-    <summary>Example Configuration using Vundle</summary>
-    ```vim
+<summary>Example Configuration using Vundle</summary>
+
+```vim
 filetype plugin on
 syntax on
 set number
@@ -209,10 +229,6 @@ augroup FiletypeNED
   autocmd!
   autocmd BufNewFile,BufRead *.ned setlocal filetype=ned
 augroup END
-augroup FiletypeMsg
-  autocmd!
-  autocmd BufNewFile,BufRead *.msg setlocal filetype=msg
-augroup END
 
 let g:lsp_work_done_progress_enabled=0
 let g:lsp_log_verbose = 0
@@ -225,7 +241,7 @@ if executable('ned_ls')
     autocmd User lsp_setup call lsp#register_server({
     \ 'name': 'ned_ls',
 	\ 'cmd': {server_info->['ned_ls', '--stdio']},
-    \ 'whitelist': ['ned', 'msg'],
+    \ 'whitelist': ['ned', 'dosini'],
     \ })
   augroup END
 endif
@@ -248,7 +264,7 @@ function! s:on_lsp_buffer_enabled() abort
     nnoremap <buffer> <expr><c-d> lsp#scroll(-4)
 
     let g:lsp_format_sync_timeout = 1000
-    autocmd! BufWritePre *.rs,*.go call execute('LspDocumentFormatSync')
+    autocmd! BufWritePre *.ned call execute('LspDocumentFormatSync')
     
     " refer to doc to add more commands
 endfunction
@@ -257,7 +273,7 @@ augroup lsp_install
     au!
     autocmd User lsp_buffer_enabled call s:on_lsp_buffer_enabled()
 augroup END
-    ```
+```
 
 </details>
 
@@ -269,20 +285,18 @@ Since VIM does **not** support dynamic file watching registration, you might nee
 This might change in the future if I implement an alternative file watching mechanism on the server side (Currently this is not prioritized).
 
 ### VS Code
+Install the extension from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=HannHank.ned-ls),
+or search for "OMNeT++ NED & INI Language Server" in the Extensions view.
 
-Download the `ned-language-server.vsix` from the action artifacts. 
+Alternatively, download the `.vsix` file from the [Releases page](https://github.com/HannHank/ned_ls/releases) and install it via the command line:
 
-Then the extension can be installed via the command line:
 ```bash
-code --install-extension <path-to>/ned-language-server 
+code --install-extension <path-to>.vsix
 ```
-Or by going to the extensions tab in VS Code and on options click "Install from VSIX...". On `v0.2.0` the extension should be available through the marketplace as well.
 
-For **macOS** you must build the language server yourself and 
-set the path to the `ned_ls` binary in the settings tab of the extension.  
+or in VS Code: open the Extensions view, click the ... menu on the top and choose Install from VSIX....
 
 >[!Note]
->- Installing the extension using the command palette seems to not work as expected.
 >- `goto_definition` works via `F12` or `Ctrl+Click` on a symbol. On Linux you can go back using `Strg+Alt+-`. 
 
 **Syntax Highlighting** via the [omnetpp-vscode-extension](https://github.com/omnetpp/omnetpp-vscode) is also possible in parallel. 

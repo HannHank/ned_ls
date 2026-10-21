@@ -34,6 +34,10 @@ pub async fn handle(
 
     // If ini file → use the ini-specific goto definition logic
     if uri.as_str().ends_with(".ini") {
+        // do not attempt to goto definition for ini files that are not part of an omnetpp workspace
+        if !crate::workspace_membership::is_omnetpp_workspace(&db) {
+            return Ok(None);
+        }
         let links = match salsa::Cancelled::catch(AssertUnwindSafe(|| {
             gd_ini_goto_definition(&db, source_input, position)
         })) {

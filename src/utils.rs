@@ -396,7 +396,12 @@ pub fn discover_config(workspace_url: &tower_lsp::lsp_types::Url) -> Option<Conf
     let mut messages = Vec::new();
     let mut imported_projects = std::collections::HashSet::new();
 
-    match parse_config(workspace_path.join("Ned_ls.toml")) {
+    let config_result = parse_config(workspace_path.join("Ned_ls.toml"));
+    // A broken config still shows the intent to use ned_ls in this workspace
+    let has_config_file = !matches!(config_result, Err(ConfigError::FileNotFound));
+    let has_nedfolders = workspace_path.join(".nedfolders").exists();
+
+    match config_result {
         Ok(parsed) => {
             for project in &parsed.imported_projects {
                 let Some(resolved) = resolve_path(Path::new(project), &workspace_path) else {
@@ -469,6 +474,8 @@ pub fn discover_config(workspace_url: &tower_lsp::lsp_types::Url) -> Option<Conf
             imported_projects,
             project_root: workspace_url.clone(),
             nedfolders: deduplicate_nested_roots(nedfolders),
+            has_config_file,
+            has_nedfolders,
         },
         messages,
     })

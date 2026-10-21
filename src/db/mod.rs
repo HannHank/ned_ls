@@ -126,6 +126,9 @@ pub trait Db: salsa::Database {
 
     fn get_all_source_file_inputs(&self) -> Vec<hir::SourceFile>;
 
+    /// true if at least one NED file from disk is indexed
+    fn has_ned_file_on_disk(&self) -> bool;
+
     // Store NED File Input
     fn set_ned_file_input(&mut self, uri: Url, ned_file: hir::SourceFile);
 
@@ -175,6 +178,12 @@ impl Db for RootLspDatabase {
             .iter()
             .map(|entry| *entry.value())
             .collect()
+    }
+
+    fn has_ned_file_on_disk(&self) -> bool {
+        self.source_input
+            .iter()
+            .any(|entry| entry.key().scheme() == "file" && entry.key().path().ends_with(".ned"))
     }
 
     fn set_ned_file_input(&mut self, uri: Url, ned_file: hir::SourceFile) {

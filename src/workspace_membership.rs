@@ -60,6 +60,16 @@ impl Membership {
     }
 }
 
+/// Whether the workspace looks like an opp project
+/// If not, the server stays silent for INI files
+pub fn is_omnetpp_workspace(db: &dyn crate::db::Db) -> bool {
+    let has_marker = db
+        .get_config()
+        .is_some_and(|config| config.has_config_file || config.has_nedfolders);
+
+    has_marker || db.has_ned_file_on_disk()
+}
+
 pub fn nedfolder_root_for<'a>(path: &Path, roots: &'a [PathBuf]) -> Option<&'a PathBuf> {
     roots
         .iter()
@@ -145,6 +155,8 @@ mod tests {
                 .collect::<HashSet<_>>(),
             project_root: Url::from_file_path(root).unwrap(),
             nedfolders: nedfolders.iter().map(|p| normalize(p)).collect(),
+            has_config_file: false,
+            has_nedfolders: false,
         }
     }
 

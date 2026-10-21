@@ -1,6 +1,5 @@
 use std::process::Command;
 
-// Since I am currently not updating the version number in Cargo.toml, I will use the git commit hash to track versions.
 fn main() {
     let output = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])

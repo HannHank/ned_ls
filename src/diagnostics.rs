@@ -211,6 +211,20 @@ async fn publish_all_diagnostics(
         .filter(|f| f.uri(&db_snapshot).path().ends_with(".ini"))
         .collect();
 
+    // Not an opp workspace → stay silent for INI files and drop what was published
+    if !workspace_membership::is_omnetpp_workspace(&db_snapshot) {
+        let stale: Vec<Url> = ini_files
+            .iter()
+            .map(|f| f.uri(&db_snapshot).clone())
+            .filter(|uri| published_diagnostics.contains_key(uri))
+            .collect();
+        if !stale.is_empty() {
+            // otherwise the error markers will persist in the client
+            clear_diagnostics(client.clone(), published_diagnostics.clone(), stale).await;
+        }
+        ini_files.clear();
+    }
+
     // Process the actively-edited file first for immediate feedback → this is necessary after the
     // INI file support was added.
     // basically just putting the current file up front
@@ -452,6 +466,14 @@ async fn publish_file_diagnostics(
         let db_guard = db.lock().await;
         db_guard.clone()
     };
+
+    // Same rule as in publish_all_diagnostics → silent for INI files outside opp workspaces
+    if uri.path().ends_with(".ini") && !workspace_membership::is_omnetpp_workspace(&db_snapshot) {
+        if published_diagnostics.contains_key(&uri) {
+            clear_diagnostics(client, published_diagnostics, vec![uri]).await;
+        }
+        return;
+    }
 
     let ned_file_input = match db_snapshot.get_source_file_input(&uri) {
         Some(file) => file,

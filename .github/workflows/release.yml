@@ -125,7 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: editors/code/package.json
 
@@ -189,7 +189,7 @@ jobs:
         working-directory: assets
         run: sha256sum * > SHA256SUMS && cat SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: assets/*
           prerelease: ${{ contains(github.ref_name, '-') }}

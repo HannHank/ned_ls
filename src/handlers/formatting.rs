@@ -20,6 +20,11 @@ pub async fn handle(
 
     let db = backend.shared.db.lock().await;
 
+    // avoids formatting ini files that are not part of an omnetpp workspace
+    if uri.as_str().ends_with(".ini") && !crate::workspace_membership::is_omnetpp_workspace(&*db) {
+        return Ok(None);
+    }
+
     let ned_input = db
         .get_source_file_input(&uri)
         .ok_or_else(Error::internal_error)?;
