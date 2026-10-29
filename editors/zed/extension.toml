@@ -1,7 +1,7 @@
 id = "ned_ls"
 name = "Ned Language Server"
 description = "A modern, incremental Language Server for OMNeT++ (NED & INI). Requires the omnetpp extension for NED files."
-version = "0.0.1"
+version = "0.3.0"
 schema_version = 1
 authors = ["Johann Hanke <hanke.johann@gmail.com>"]
 repository = "https://github.com/HannHank/ned_ls"
