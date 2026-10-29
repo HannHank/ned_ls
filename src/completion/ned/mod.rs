@@ -47,6 +47,8 @@ pub enum CompletionItemResponse {
 pub struct GenericSuggestion {
     pub name: String,
     pub detail: Option<String>,
+    /// Reference for the documentation → becomes the data field of the completion item
+    pub doc: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +56,8 @@ pub struct GlobalSuggestion {
     pub name: String,
     pub fqn: String,
     pub needs_import: bool,
+    /// Reference for the documentation → becomes the data of the completion item
+    pub doc: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,6 +375,7 @@ pub async fn completion(
                                 name: name.clone(),
                                 fqn: def.fqn(engine.db).text(engine.db).clone(),
                                 needs_import: false, // No import needed for like expressions
+                                doc: crate::completion::shared::type_doc_data(engine.db, *def),
                             })
                     })
                     .collect();
@@ -637,6 +642,7 @@ pub fn get_global_suggestions<'db>(
                 name: simple_name.clone(),
                 fqn,
                 needs_import,
+                doc: crate::completion::shared::type_doc_data(db, *def),
             });
         }
     }

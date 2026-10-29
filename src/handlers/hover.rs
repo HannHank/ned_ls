@@ -56,20 +56,16 @@ fn resolve_hover(db: &crate::db::RootLspDatabase, uri: &Url, position: Position)
         .unwrap_or(uri.clone()); // fallback to source uri
 
     let target_input = db.get_source_file_input(&target_uri)?;
-    let target_tree = db.get_ast_for_file(&target_input)?;
-    let target_rope = target_input.rope(db);
 
-    let span = match &resolved_decl {
-        crate::goto_definition::ResolvedDefinition::Module(def_index) => def_index.span(db),
-        crate::goto_definition::ResolvedDefinition::Member { span, .. } => *span,
-    };
-
-    let target_node = target_tree
-        .root_node()
-        .descendant_for_byte_range(span.start, span.end)?;
-
-    // Extract Documentation using the node and rope
-    let doc_string = utils::extract_documentation(target_node, target_rope)?;
+    // members (parameters, gates, submodules) are often documented with a trailing comment
+    let doc_string = match &resolved_decl {
+        crate::goto_definition::ResolvedDefinition::Module(def_index) => {
+            utils::documentation_at_span(db, target_input, def_index.span(db))
+        }
+        crate::goto_definition::ResolvedDefinition::Member { span, .. } => {
+            utils::member_documentation_at_span(db, target_input, *span)
+        }
+    }?;
 
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {

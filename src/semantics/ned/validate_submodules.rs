@@ -63,6 +63,7 @@ pub fn validate_submodules<'a, 'db>(
                 interface_name: name,
                 like_expr,
                 span,
+                ..
             } => {
                 if name.contains('*') {
                     ctx.error(

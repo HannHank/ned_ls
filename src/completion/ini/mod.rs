@@ -1,4 +1,5 @@
 use crate::completion::shared::{attach_range, replacement_range};
+use crate::completion::shared::{param_doc_data, type_doc_data};
 use crate::semantics::ini::{NetworkState, builtin_config, parse_ini_key};
 use crate::semantics::ned::shared::match_glob;
 use crate::semantics::shared::get_type_skeleton;
@@ -158,13 +159,37 @@ fn key_completions(
         }
     }
 
+    // Type of completion submodule
+    let submodule_type = |sub_name: &str| -> Option<crate::db::DefIndex> {
+        matched_nodes.iter().find_map(|(parent_path, _)| {
+            let child_path = format!("{parent_path}.{sub_name}");
+            network_state
+                .dynamic_nodes
+                .iter()
+                .find(|(path, _)| *path == child_path)
+                .map(|(_, node)| node)
+                .or_else(|| {
+                    network_state
+                        .find_flattened_matches(&child_path)
+                        .first()
+                        .map(|&idx| &network_state.flattened_nodes[idx])
+                })
+                .and_then(|node| node.type_def)
+        })
+    };
+
     for ctx in &matched_contexts {
         for sub_name in ctx.submodules.keys() {
             if seen_submodules.insert(sub_name.clone()) {
+                let type_def = submodule_type(sub_name);
                 items.push(CompletionItem {
                     label: sub_name.clone(),
                     kind: Some(CompletionItemKind::MODULE),
-                    detail: Some("Submodule".to_string()),
+                    detail: Some(type_def.map_or_else(
+                        || "Submodule".to_string(),
+                        |def| def.fqn(db).text(db).clone(),
+                    )),
+                    data: type_def.and_then(|def| type_doc_data(db, def)),
                     ..Default::default()
                 });
             }
@@ -172,6 +197,8 @@ fn key_completions(
 
         for (param_name, param_entry) in ctx.parameters.iter() {
             if seen_params.insert(param_name.clone()) {
+                let is_param =
+                    matches!(param_entry.item, crate::hir::ned::ParamBlockItem::Param(_));
                 let detail = if let crate::hir::ned::ParamBlockItem::Param(p) = &param_entry.item {
                     p.ned_type(db)
                         .clone()
@@ -184,6 +211,9 @@ fn key_completions(
                     label: param_name.clone(),
                     kind: Some(CompletionItemKind::FIELD),
                     detail: Some(detail),
+                    data: is_param
+                        .then(|| param_doc_data(db, param_entry.origin, param_name))
+                        .flatten(),
                     ..Default::default()
                 });
             }
@@ -269,6 +299,7 @@ fn value_completions(
                         label: format!("\"{}\"", name),
                         kind: Some(CompletionItemKind::CLASS),
                         detail: Some(def.fqn(db).text(db).to_string()),
+                        data: type_doc_data(db, *def),
                         ..Default::default()
                     });
                 }
@@ -359,6 +390,7 @@ fn network_value_completions(
                 },
                 kind: Some(CompletionItemKind::CLASS),
                 detail: Some(fqn),
+                data: type_doc_data(db, *def),
                 ..Default::default()
             });
         }

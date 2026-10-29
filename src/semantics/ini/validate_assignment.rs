@@ -248,6 +248,9 @@ pub fn validate_ini_assignment<'db>(
     }
 
     let mut param_found_in_any = false;
+
+    // check if the parameter is fixed in NED → if so, then warn that the ini value is ignored
+    let mut fixed_in: Option<Vec<String>> = Some(Vec::new());
     let target_param_pattern = target_param_name.replace("**", "*");
     let is_param_wildcard = target_param_name.contains('*') || target_param_name.contains('?');
 
@@ -369,8 +372,27 @@ pub fn validate_ini_assignment<'db>(
                 if let ParamBlockItem::Param(tp) = &target_param.item {
                     expected_type = tp.ned_type(ctx.db).clone();
                 }
+
+                // only checked while every match so far is fixed → stops at the first free one
+                if let Some(locations) = fixed_in.as_mut() {
+                    match super::fixed_params::ned_fixed_assignment(
+                        ctx.db,
+                        network_state,
+                        absolute_path,
+                        sub_ctx,
+                        target_param_name,
+                    ) {
+                        Some(location) => {
+                            if !locations.contains(&location) {
+                                locations.push(location);
+                            }
+                        }
+                        None => fixed_in = None,
+                    }
+                }
             } else if sub_ctx.gates.contains_key(target_param_name) {
                 param_exists = true;
+                fixed_in = None;
             }
 
             if param_exists {
@@ -410,11 +432,30 @@ pub fn validate_ini_assignment<'db>(
         };
         ctx.warning(assignment.key_span.start, assignment.key_span.end, message);
     }
+
+    // opp ignores ini values for parameters that ned assigns without default()
+    // This is a really important warning and saves a lot of time
+    if param_found_in_any
+        && !is_param_wildcard
+        && let Some(locations) = fixed_in
+        && !locations.is_empty()
+    {
+        // println!("Parameter '{}' is fixed in NED without default() → ini value is ignored.", target_param_name);
+        ctx.warning(
+            assignment.key_span.start,
+            assignment.key_span.end,
+            format!(
+                "Parameter '{}' is set in NED without default() ({}), so this value is ignored.",
+                target_param_name,
+                locations.join("; ")
+            ),
+        );
+    }
 }
 
 /// Finds the skeleton node for an exact absolute path → considering both the
 /// static skeleton and dynamically added nodes.
-fn find_node_for_path<'a, 'db>(
+pub(super) fn find_node_for_path<'a, 'db>(
     network_state: &'a super::NetworkState<'_, 'db>,
     path: &str,
 ) -> Option<&'a SkeletonNode<'db>> {

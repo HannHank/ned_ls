@@ -3,6 +3,8 @@ use crate::{
     hir::ned::ParamBlockItem,
 };
 
+use crate::completion::shared::param_doc_data;
+
 pub fn parameters_completions(
     engine: &super::CompletionEngine<'_, '_>,
     completions: &mut super::CompletionResult,
@@ -58,6 +60,7 @@ pub fn parameters_completions(
                                 .ned_type(engine.db)
                                 .as_ref()
                                 .map(|t| format!("Parameter: {}", t.as_str())),
+                            doc: param_doc_data(engine.db, entry.origin, name),
                         }),
                         ParamBlockItem::Property(_) => None, // Properties are suggested as fix
                                                              // keywords, therefore I must filter them out here to avoid duplicates
@@ -84,6 +87,7 @@ pub fn parameters_completions(
                             .ned_type(engine.db)
                             .as_ref()
                             .map(|t| format!("Type: {}", t.as_str())),
+                        doc: param_doc_data(engine.db, entry.origin, name),
                     }),
                     ParamBlockItem::Property(_) => None, // Properties are suggested as fix
                                                          // keywords, therefore I must filter them out here to avoid duplicates
@@ -105,20 +109,24 @@ pub fn parameters_completions(
                             visible_defs.clone(),
                         )
                     {
-                        for param in sub_context.parameters.values().filter_map(|entry| {
-                            if let ParamBlockItem::Param(param) = &entry.item {
-                                Some(param)
-                            } else {
-                                None
-                            }
-                        }) {
+                        for (param, declared_in) in
+                            sub_context.parameters.values().filter_map(|entry| {
+                                if let ParamBlockItem::Param(param) = &entry.item {
+                                    Some((param, entry.origin))
+                                } else {
+                                    None
+                                }
+                            })
+                        {
                             let name = param.name(engine.db).text(engine.db).clone();
+                            let doc = param_doc_data(engine.db, declared_in, &name);
                             flattened_sub_params.push(super::GenericSuggestion {
                                 name: format!("{}.{}", sub_name, name),
                                 detail: param
                                     .ned_type(engine.db)
                                     .as_ref()
                                     .map(|t| format!("Parameter: {}", t.as_str())),
+                                doc: doc.clone(),
                             });
 
                             // If the submodule is a vector → suggest wildcard access
@@ -129,6 +137,7 @@ pub fn parameters_completions(
                                         .ned_type(engine.db)
                                         .as_ref()
                                         .map(|t| format!("Parameter: {}", t.as_str())),
+                                    doc,
                                 });
                             }
                         }

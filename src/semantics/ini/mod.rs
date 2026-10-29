@@ -1,10 +1,12 @@
 pub mod builtin_config;
-mod prelude;
 pub mod shared;
-mod validate_assignment;
 pub mod validate_buildin_assignment;
 pub mod validate_gate_assignment;
 pub mod validate_network;
+
+mod fixed_params;
+mod prelude;
+mod validate_assignment;
 
 use validate_buildin_assignment::{
     check_builtin_value_type, check_seed_rng_index, validate_builtin_assignment,

@@ -36,6 +36,65 @@ pub struct ParamSegment<'db> {
     pub is_path: bool,
 }
 
+/// What a parameter assignment or a like expression sets → only `Fixed`
+/// values cannot be changed from the INI file
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, salsa::SalsaValue)]
+pub enum ValueKind {
+    /// preemption = true;, <"MultiLevelPreemption">
+    Fixed,
+    /// preemption = default(false);, <default("MultiLevelPreemption")>
+    Default,
+    /// preemption = default; → use the default value of the declaration
+    UseDefault,
+    /// preemption = ask; → asked for at runtime
+    Ask,
+}
+
+impl ValueKind {
+    /// Kind and expression text of a parameter value or a
+    /// like expression.
+    pub fn split(node: &tree_sitter::Node, rope: &Rope) -> Option<(ValueKind, Option<String>)> {
+        let mut cursor = node.walk();
+        let tokens: Vec<tree_sitter::Node> = node
+            .children(&mut cursor)
+            .filter(|c| !c.is_named())
+            .collect();
+        let token = |kind: &str| tokens.iter().find(|t| t.kind() == kind);
+        let last_token = |kind: &str| tokens.iter().rev().find(|t| t.kind() == kind);
+
+        let has_default = token("default").is_some();
+        let (open, close) = if has_default {
+            (token("("), last_token(")"))
+        } else {
+            (token("<"), last_token(">"))
+        };
+
+        let expr = if has_default && open.is_none() {
+            None // bare `default`
+        } else {
+            let start = open.map_or(node.start_byte(), |t| t.end_byte());
+            let end = close.map_or(node.end_byte(), |t| t.start_byte()).max(start);
+            let text = rope.byte_slice(start..end).to_string();
+            let text = text.trim();
+            (!text.is_empty()).then(|| text.to_string())
+        };
+
+        let kind = if has_default {
+            if open.is_some() {
+                ValueKind::Default
+            } else {
+                ValueKind::UseDefault
+            }
+        } else if token("ask").is_some() {
+            return Some((ValueKind::Ask, None));
+        } else {
+            expr.as_ref()?; // `<>`
+            ValueKind::Fixed
+        };
+        Some((kind, expr))
+    }
+}
+
 /// Represents: `int address;`
 #[salsa::tracked(debug)]
 pub struct ParamHir<'db> {
@@ -46,7 +105,12 @@ pub struct ParamHir<'db> {
     pub vectorized: bool, // Important for submodules
     pub ned_type: Option<NedType>,
     pub inferred_type: Option<NedType>,
+    /// Text of the whole value, e.g. `default(80)` → for messages and hover
     pub value: Option<Word<'db>>,
+    /// None if no value is assigned
+    pub value_kind: Option<ValueKind>,
+    /// Expression of the value without a surrounding `default(...)` → None for `default` and `ask`
+    pub value_expr: Option<Word<'db>>,
     pub span: Span,
 }
 
@@ -205,6 +269,12 @@ pub fn build_parameters_block<'db>(
 
                     let vectorized = segments.first().is_some_and(|s| s.index(db).is_some());
 
+                    let (value_kind, value_expr) =
+                        match value_node.and_then(|n| ValueKind::split(&n, rope)) {
+                            Some((kind, expr)) => (Some(kind), expr.map(|e| Word::new(db, e))),
+                            None => (None, None),
+                        };
+
                     // INFO: Maybe move this to the semantics
                     // Check for type mismatches and emit diagnostics
                     if let (Some(declared), Some(inferred)) = (&declared_type, &inferred_type)
@@ -235,6 +305,8 @@ pub fn build_parameters_block<'db>(
                         declared_type,
                         inferred_type,
                         value_word,
+                        value_kind,
+                        value_expr,
                         Span::new(name_node.start_byte(), child.end_byte()),
                     )));
                 }
@@ -266,6 +338,57 @@ pub fn build_parameters_block<'db>(
 
 #[cfg(test)]
 mod tests {
+    use super::{ParamBlockItem, ValueKind};
+
+    #[test]
+    fn value_kinds_are_detected() {
+        let (db, file) = crate::test_utils::setup_ned(
+            "\
+simple A
+{
+    parameters:
+        int fixed = 1;
+        int withDefault = default(2);
+        int useDefault = default;
+        int asked = ask;
+        int unassigned;
+        string named = someName;
+        string namedDefault = default(someName);
+}
+",
+        );
+        let hir = crate::hir::ned::lower_to_hir(&db, file);
+        type Row = (String, Option<ValueKind>, Option<String>);
+        let rows: Vec<Row> = hir.items(&db)[0]
+            .parameters(&db)
+            .iter()
+            .filter_map(|item| match item {
+                ParamBlockItem::Param(p) => Some((
+                    p.name(&db).text(&db).clone(),
+                    *p.value_kind(&db),
+                    p.value_expr(&db).map(|w| w.text(&db).clone()),
+                )),
+                ParamBlockItem::Property(_) => None,
+            })
+            .collect();
+
+        let row = |name: &str, kind: Option<ValueKind>, expr: Option<&str>| -> Row {
+            (name.to_string(), kind, expr.map(str::to_string))
+        };
+        assert_eq!(
+            rows,
+            vec![
+                row("fixed", Some(ValueKind::Fixed), Some("1")),
+                row("withDefault", Some(ValueKind::Default), Some("2")),
+                row("useDefault", Some(ValueKind::UseDefault), None),
+                row("asked", Some(ValueKind::Ask), None),
+                row("unassigned", None, None),
+                // plain names have no node of their own in the syntax tree
+                row("named", Some(ValueKind::Fixed), Some("someName")),
+                row("namedDefault", Some(ValueKind::Default), Some("someName")),
+            ]
+        );
+    }
 
     #[test]
     fn test_ast_dump_param() {

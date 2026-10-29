@@ -202,10 +202,12 @@ fn validate_channel<'a, 'db>(
     if let Some(channel_type_word) = &channel.channel_type {
         let raw_type = channel_type_word.text(ctx.db);
 
-        // Extract the actual concrete type, stripping `default("...")` if present
+        // Inside <...> a plain name refers to a parameter → only string literals name a type
+        let names_type = channel.like_kind.is_none() || raw_type.trim_start().starts_with('"');
+
         if let Some((name, is_concrete)) = extract_concrete_type(raw_type) {
             // If the expression was fully dynamic, we safely skip strict validation
-            if !is_concrete {
+            if !is_concrete || !names_type {
                 return;
             }
 
@@ -247,5 +249,64 @@ fn validate_channel<'a, 'db>(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_utils::setup_ned;
+
+    fn channel_errors(connection: &str) -> Vec<String> {
+        let ned = format!(
+            "\
+simple Node
+{{
+    gates:
+        inout g;
+}}
+
+channelinterface IC
+{{
+}}
+
+channel C like IC
+{{
+}}
+
+network Net
+{{
+    parameters:
+        string chanType = default(\"C\");
+    submodules:
+        a: Node;
+        b: Node;
+    connections:
+        {connection}
+}}
+"
+        );
+        let (db, file) = setup_ned(&ned);
+        crate::semantics::semantic_analysis(&db, file)
+            .iter()
+            .filter(|d| d.message.starts_with("Channel '"))
+            .map(|d| d.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn parameter_in_like_expression_is_not_a_channel_type() {
+        assert!(channel_errors("a.g <--> <chanType> like IC <--> b.g;").is_empty());
+    }
+
+    #[test]
+    fn unknown_default_channel_in_like_expression_is_reported() {
+        let errors = channel_errors("a.g <--> <default(\"Missing\")> like IC <--> b.g;");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("'Missing'"), "{errors:?}");
+    }
+
+    #[test]
+    fn known_default_channel_in_like_expression_is_accepted() {
+        assert!(channel_errors("a.g <--> <default(\"C\")> like IC <--> b.g;").is_empty());
     }
 }

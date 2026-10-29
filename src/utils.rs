@@ -618,9 +618,101 @@ pub fn find_all_ned_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// Documentation comment above the node at span in file →  as Markdown
+pub fn documentation_at_span(
+    db: &dyn crate::db::Db,
+    file: hir::SourceFile,
+    span: Span,
+) -> Option<String> {
+    let tree = db.get_ast_for_file(&file)?;
+    let node = tree
+        .root_node()
+        .descendant_for_byte_range(span.start, span.end)?;
+    extract_documentation(node, file.rope(db))
+}
+
+/// Comment after a declaration on the same line
+/// Semicolon and whitespace are allowed before the comment
+fn trailing_comment(rope: &Rope, end_byte: usize) -> Option<String> {
+    if end_byte > rope.len_bytes() {
+        return None;
+    }
+    let line = rope.byte_to_line(end_byte);
+    let line_end = rope.line_to_byte(line + 1);
+    let rest = rope.byte_slice(end_byte..line_end).to_string();
+    let rest = rest.trim_start_matches(|c: char| c == ';' || c.is_whitespace());
+    let comment = rest.strip_prefix("//")?.trim();
+    (!comment.is_empty()).then(|| format_ned_doc(comment))
+}
+
+/// documentation of a member
+pub fn member_documentation_at_span(
+    db: &dyn crate::db::Db,
+    file: hir::SourceFile,
+    span: Span,
+) -> Option<String> {
+    // doc from above
+    let above = documentation_at_span(db, file, span);
+    // doc at current line
+    let trailing = trailing_comment(file.rope(db), span.end);
+    // returning the above doc if it exists, otherwise the trailing doc
+    match (above, trailing) {
+        (Some(above), Some(trailing)) => Some(format!("{above}\n\n{trailing}")),
+        (above, trailing) => above.or(trailing),
+    }
+}
+
+/// Documentation of the parameter param declared in the NED type type_name in the file uri
+pub fn documentation_for_parameter(
+    db: &dyn crate::db::Db,
+    uri: &tower_lsp::lsp_types::Url,
+    type_name: &str,
+    param: &str,
+) -> Option<String> {
+    let file = db.get_source_file_input(uri)?;
+    let hir = hir::ned::lower_to_hir(db, file);
+    let item = hir
+        .items(db)
+        .iter()
+        .find(|item| item.name(db).text(db) == type_name)?;
+
+    // get the parameter declaration with the given name
+    let declaration = item.parameters(db).iter().find_map(|p| match p {
+        hir::ned::ParamBlockItem::Param(p)
+            if p.ned_type(db).is_some() && p.name(db).text(db) == param =>
+        {
+            Some(*p)
+        }
+        _ => None,
+    })?;
+    // resolve the doc for that parameter declaration
+    member_documentation_at_span(db, file, *declaration.span(db))
+}
+
+/// Documentation comment above the NED type name declared in the file uri → as Markdown
+pub fn documentation_for_type(
+    db: &dyn crate::db::Db,
+    uri: &tower_lsp::lsp_types::Url,
+    name: &str,
+) -> Option<String> {
+    let file = db.get_source_file_input(uri)?;
+    let hir = hir::ned::lower_to_hir(db, file);
+    let item = hir
+        .items(db)
+        .iter()
+        .find(|item| item.name(db).text(db) == name)?;
+    documentation_at_span(db, file, item.span(db))
+}
+
 // TODO: move into seperate file
 pub fn extract_documentation(node: tree_sitter::Node, rope: &Rope) -> Option<String> {
-    let start_row = node.start_position().row;
+    // Some nodes () start with the line break that ends the comment above → the
+    // first character of the declaration decides the row
+    let mut start_byte = node.start_byte();
+    while start_byte < node.end_byte() && rope.byte(start_byte).is_ascii_whitespace() {
+        start_byte += 1;
+    }
+    let start_row = rope.byte_to_line(start_byte);
     let mut doc_lines = Vec::new();
 
     let mut current_row = start_row;
@@ -692,6 +784,78 @@ mod tests {
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
     use tower_lsp::lsp_types::Position;
+
+    fn param_doc(ned: &str, param: &str) -> Option<String> {
+        let (db, file) = crate::test_utils::setup_ned(ned);
+        let uri = file.uri(&db).clone();
+        super::documentation_for_parameter(&db, &uri, "App", param)
+    }
+
+    #[test]
+    fn parameter_documentation_from_trailing_comment() {
+        let ned = "\
+simple App
+{
+    parameters:
+        int numApps = default(0); // number of apps
+        int plain = 1;
+}
+";
+        assert_eq!(param_doc(ned, "numApps").as_deref(), Some("number of apps"));
+        assert_eq!(param_doc(ned, "plain"), None);
+    }
+
+    #[test]
+    fn parameter_documentation_combines_above_and_trailing() {
+        let ned = "\
+simple App
+{
+    parameters:
+        // Port the app listens on.
+        int port = default(1000); // must be free
+}
+";
+        assert_eq!(
+            param_doc(ned, "port").as_deref(),
+            Some("Port the app listens on.\n\nmust be free")
+        );
+    }
+
+    #[test]
+    fn trailing_comment_must_follow_the_declaration() {
+        let ned = "\
+simple App
+{
+    parameters:
+        string url = \"http://example.com\";
+        int a = 1; int b = 2; // only b
+}
+";
+        // "//" inside the value is not a comment
+        assert_eq!(param_doc(ned, "url"), None);
+        // the comment belongs to the last declaration on the line
+        assert_eq!(param_doc(ned, "a"), None);
+        assert_eq!(param_doc(ned, "b").as_deref(), Some("only b"));
+    }
+
+    #[test]
+    fn documentation_keeps_every_comment_line() {
+        // the module node starts at the line break after the comment → the last line must not get lost
+        let ned = "\
+// First line.
+// Last line.
+module Host
+{
+}
+";
+        let (db, file) = crate::test_utils::setup_ned(ned);
+        let uri = file.uri(&db).clone();
+        assert_eq!(
+            super::documentation_for_type(&db, &uri, "Host").as_deref(),
+            Some("First line.\nLast line.")
+        );
+    }
+
     #[test]
     fn test_byte_to_point() {
         let text = "Hello, 😂\nThis is a test.\n";

@@ -6,7 +6,9 @@ name: Release
 #
 #
 # Tags containing a `-` (e.g. `v0.1.0-rc.1`) become GitHub pre-releases and are
-# never published to the marketplaces. 
+# never published to the marketplaces.
+#
+# release text `## [x.y.z]` section of CHANGELOG.md 
 
 on:
   push:
@@ -38,6 +40,17 @@ jobs:
           base="${tag%%-*}"
           if [ "$cargo_version" != "$base" ] || [ "$code_version" != "$base" ]; then
             echo "::error::Version mismatch: tag $tag, Cargo.toml $cargo_version, package.json $code_version"
+            exit 1
+          fi
+
+      # Fail before the builds instead of in the release job
+      - name: Check CHANGELOG.md has a section for the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          base="${tag%%-*}"
+          # try to grep the tag
+          if ! grep -qF "## [$base]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$base]' section"
             exit 1
           fi
 
@@ -152,6 +165,7 @@ jobs:
             chmod +x editors/code/bin/ned_ls
           fi
           cp README.md editors/code/README.md
+          cp CHANGELOG.md editors/code/CHANGELOG.md
           ls -la editors/code/bin
 
       - name: Install dependencies
@@ -180,6 +194,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -189,11 +205,22 @@ jobs:
         working-directory: assets
         run: sha256sum * > SHA256SUMS && cat SHA256SUMS
 
+      # Everything between `## [x.y.z]` and the next `## [` heading
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          base="${tag%%-*}"
+          awk -v v="$base" '
+            /^## \[/ { if (found) exit; found = index($0, "## [" v "]") == 1; next }
+            found
+          ' CHANGELOG.md > release-notes.md
+          cat release-notes.md
+
       - uses: softprops/action-gh-release@v3
         with:
           files: assets/*
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          body_path: release-notes.md
 
   publish-vscode:
     name: Publish to VS Code Marketplace

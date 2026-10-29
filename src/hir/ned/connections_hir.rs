@@ -23,7 +23,11 @@ pub struct ConnectionEndpoint<'db> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, salsa::SalsaValue)]
 pub struct ChannelSpec<'db> {
     pub name: Option<Word<'db>>,
+    /// Type name, or the expression inside <...> without a surrounding default(...) → This
+    /// allows me to skip the parsing in later stages
     pub channel_type: Option<Word<'db>>,
+    /// Set if the type comes from a like expression (<default("Eth1G")> like IChannel`)
+    pub like_kind: Option<crate::hir::ned::ValueKind>,
     pub span: Span,
 }
 
@@ -116,8 +120,11 @@ pub fn build_connections_block<'db>(
                     .and_then(|n| hir::tree_utils::extract_field(db, &n, rope).map(|c| c.word));
                 let channel_type = channel_type_node
                     .and_then(|n| hir::tree_utils::extract_field(db, &n, rope).map(|c| c.word));
-                let like_expr = like_expr_node
-                    .and_then(|n| hir::tree_utils::extract_field(db, &n, rope).map(|c| c.word));
+                let like = like_expr_node.and_then(|n| crate::hir::ned::ValueKind::split(&n, rope));
+                let like_kind = like.as_ref().map(|(kind, _)| *kind);
+                let like_expr = like
+                    .and_then(|(_, expr)| expr)
+                    .map(|e| hir::Word::new(db, e));
 
                 let actual_type = if channel_type.is_some() {
                     channel_type
@@ -135,6 +142,11 @@ pub fn build_connections_block<'db>(
                 channel = Some(ChannelSpec {
                     name,
                     channel_type: actual_type,
+                    like_kind: if channel_type.is_some() {
+                        None
+                    } else {
+                        like_kind
+                    },
                     span: Span::new(span_node.start_byte(), span_node.end_byte()),
                 });
             }
@@ -175,6 +187,55 @@ pub fn build_connections_block<'db>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channels_keep_like_kind_and_expression() {
+        let code = "
+        network Test {
+            connections:
+                a.g <--> e1: NormalP <--> b.g;
+                a.g <--> <default(\"NormalP\")> like IChannel <--> b.g;
+                a.g <--> <chanType> like IChannel <--> b.g;
+        }
+        ";
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&tree_sitter_ned::language()).unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        let db = crate::db::RootLspDatabase::default();
+        let rope = ropey::Rope::from_str(code);
+
+        let network = tree.root_node().named_child(0).unwrap();
+        let mut cursor = network.walk();
+        let connections_node = network
+            .children(&mut cursor)
+            .find(|c| c.kind() == "connections")
+            .unwrap();
+        let hir = build_connections_block(&db, &connections_node, &rope).unwrap();
+
+        let mut channels: Vec<(String, Option<crate::hir::ned::ValueKind>)> = hir
+            .iter()
+            .map(|c| {
+                let channel = c.channel.as_ref().unwrap();
+                (
+                    channel.channel_type.unwrap().text(&db).clone(),
+                    channel.like_kind,
+                )
+            })
+            .collect();
+
+        // the block does not keep the source order
+        channels.sort_by(|a, b| a.0.cmp(&b.0));
+
+        use crate::hir::ned::ValueKind;
+        assert_eq!(
+            channels,
+            vec![
+                ("\"NormalP\"".to_string(), Some(ValueKind::Default)),
+                ("NormalP".to_string(), None),
+                ("chanType".to_string(), Some(ValueKind::Fixed)),
+            ]
+        );
+    }
 
     #[test]
     fn test_ast_dump() {

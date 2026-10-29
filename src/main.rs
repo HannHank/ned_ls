@@ -321,7 +321,9 @@ impl LanguageServer for Backend {
                     work_done_progress_options: Default::default(),
                 })),
                 completion_provider: Some(CompletionOptions {
-                    resolve_provider: Some(false),
+                    // descriptions of NED types are only read for the selected item
+                    resolve_provider: Some(true), // this is very important otherwise the doc is not
+                    // read lazy
                     trigger_characters: None,
                     work_done_progress_options: Default::default(),
                     all_commit_characters: None,
@@ -584,6 +586,17 @@ impl LanguageServer for Backend {
         crate::handlers::commands::execute_command(self, params).await
     }
 
+    async fn completion_resolve(&self, item: CompletionItem) -> Result<CompletionItem> {
+        let db = self.shared.db.lock().await.clone();
+        let unresolved = item.clone();
+        match salsa::Cancelled::catch(std::panic::AssertUnwindSafe(|| {
+            completion::shared::resolve_item(&db, item)
+        })) {
+            Ok(item) => Ok(item),
+            Err(_cancelled) => Ok(unresolved),
+        }
+    }
+
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = &params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
@@ -693,6 +706,7 @@ impl LanguageServer for Backend {
 
                                     // Auto-import
                                     additional_text_edits,
+                                    data: s.doc.clone(),
                                     ..Default::default()
                                 });
 
@@ -705,6 +719,7 @@ impl LanguageServer for Backend {
                                         insert_text: Some(s.fqn.clone()),
                                         filter_text: Some(s.fqn.clone()),
                                         sort_text: Some(format!("1_{}", s.fqn)),
+                                        data: s.doc.clone(),
                                         ..Default::default()
                                     });
                                 }
@@ -743,6 +758,7 @@ impl LanguageServer for Backend {
                                     kind: Some(CompletionItemKind::FIELD),
                                     detail: p.detail.clone(),
                                     insert_text: Some(p.name.clone()),
+                                    data: p.doc.clone(),
                                     ..Default::default()
                                 })
                                 .collect();

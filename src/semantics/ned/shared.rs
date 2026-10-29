@@ -145,7 +145,7 @@ fn resolve_param_value_as_type<'db>(
     // Check the context entry (declaration with default value)
     if let Some(param_entry) = parent.context.parameters.get(param_name)
         && let ParamBlockItem::Param(p) = &param_entry.item
-        && let Some(val) = p.value(db)
+        && let Some(val) = p.value_expr(db)
         && let Some((resolved, true)) = extract_concrete_type(val.text(db))
         && !resolved.is_empty()
     {
@@ -158,7 +158,7 @@ fn resolve_param_value_as_type<'db>(
         if let ParamBlockItem::Param(p) = param
             && !p.pattern(db)
             && p.name(db).text(db) == param_name
-            && let Some(val) = p.value(db)
+            && let Some(val) = p.value_expr(db)
             && let Some((resolved, true)) = extract_concrete_type(val.text(db))
             && !resolved.is_empty()
         {
@@ -169,33 +169,17 @@ fn resolve_param_value_as_type<'db>(
     None
 }
 
-// TODO: I do not like the manual parsing of the default keyword → Maybe I should move this to TS
+/// Extracts a concrete type from a string, returning the type and a boolean indicating if its known at compile time.
+/// The bool is false if the type is only known at runtime
 pub fn extract_concrete_type(text: &str) -> Option<(String, bool)> {
-    let mut s = text.trim();
-    let is_parametric_syntax = s.starts_with('<');
-
-    if is_parametric_syntax && let Some(end) = s.rfind('>') {
-        s = s[1..end].trim();
-    }
-
-    if s.starts_with("default(") && s.ends_with(')') {
-        s = s[8..s.len() - 1].trim();
-    }
+    let s = text.trim();
 
     if s.starts_with('"') && s.ends_with('"') {
         let inner = s.trim_matches('"');
-        if inner.is_empty() {
-            return Some((inner.to_string(), false));
-        } else {
-            return Some((inner.to_string(), true));
-        }
+        return Some((inner.to_string(), !inner.is_empty()));
     }
 
-    if s.contains('(') || is_parametric_syntax {
-        Some((s.to_string(), false))
-    } else {
-        Some((s.to_string(), true))
-    }
+    Some((s.to_string(), !s.contains('(')))
 }
 
 pub fn get_submodule_actual_type<'db>(
@@ -221,7 +205,7 @@ pub fn get_submodule_actual_type<'db>(
 
                 if sub_pattern_str == sub_name
                     && target_param_name == "typename"
-                    && let Some(val) = p.value(db)
+                    && let Some(val) = p.value_expr(db)
                     && let Some((extracted, true)) = extract_concrete_type(val.text(db))
                 {
                     return Some((extracted, true));
@@ -234,7 +218,7 @@ pub fn get_submodule_actual_type<'db>(
     let target_name = format!("{}.typename", sub_name);
     if let Some(ctx_param) = parent.context.parameters.get(&target_name)
         && let ParamBlockItem::Param(p) = &ctx_param.item
-        && let Some(val) = p.value(db)
+        && let Some(val) = p.value_expr(db)
         && let Some((extracted, true)) = extract_concrete_type(val.text(db))
     {
         return Some((extracted, true));
@@ -245,7 +229,7 @@ pub fn get_submodule_actual_type<'db>(
     for param in parent.params {
         if let ParamBlockItem::Param(p) = param
             && p.name(db).text(db) == &target_name
-            && let Some(val) = p.value(db)
+            && let Some(val) = p.value_expr(db)
             && let Some((extracted, true)) = extract_concrete_type(val.text(db))
         {
             return Some((extracted, true));

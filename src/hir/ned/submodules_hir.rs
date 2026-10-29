@@ -7,7 +7,7 @@ use crate::{
     hir::{
         Diagnostic, Span,
         ned::gate_hir::{GateHir, build_gates_block},
-        ned::param_hir::{ParamBlockItem, build_parameters_block},
+        ned::param_hir::{ParamBlockItem, ValueKind, build_parameters_block},
         tree_utils::text_for_node,
     },
 };
@@ -41,7 +41,10 @@ pub enum SubmoduleDefinition {
 
     Parametric {
         interface_name: String,
+        /// expression inside <...> without a surrounding default(...) → None for <>
         like_expr: Option<String>,
+        /// <"MultiLevelPreemption"> fixed or <default("MultiLevelPreemption")> → None for <>
+        like_kind: Option<ValueKind>,
         span: Span,
     },
 }
@@ -99,15 +102,16 @@ pub fn build_submodule_hir<'db>(
     let definition = if let Some(like_type_node) = node.child_by_field_name("like_type") {
         let interface_name = text_for_node(&like_type_node, rope).unwrap_or_default();
 
-        let like_expr = node
+        let like = node
             .child_by_field_name("like_expr")
-            .and_then(|n| text_for_node(&n, rope))
-            .map(|raw| clean_like_expr(&raw))
-            .filter(|s| !s.is_empty());
+            .and_then(|n| ValueKind::split(&n, rope));
+        let like_kind = like.as_ref().map(|(kind, _)| *kind);
+        let like_expr = like.and_then(|(_, expr)| expr);
 
         SubmoduleDefinition::Parametric {
             interface_name,
             like_expr,
+            like_kind,
             span: Span {
                 start: like_type_node.start_byte(),
                 end: like_type_node.end_byte(),
@@ -184,19 +188,56 @@ pub fn build_submodule_hir<'db>(
         span,
     })
 }
-/// Turns "<expr>" into "expr" and "<>" into ""
-fn clean_like_expr(raw: &str) -> String {
-    raw.trim()
-        .strip_prefix('<')
-        .unwrap_or(raw)
-        .strip_suffix('>')
-        .unwrap_or(raw)
-        .trim()
-        .to_string()
-}
 
 #[cfg(test)]
 mod tests {
+    use super::SubmoduleDefinition;
+    use crate::hir::ned::ValueKind;
+
+    #[test]
+    fn like_expressions_keep_kind_and_expression() {
+        let (db, file) = crate::test_utils::setup_ned(
+            "\
+network Net
+{
+    submodules:
+        a: <default(\"UdpApp\")> like IApp;
+        b: <appType> like IApp;
+        c: <> like IApp;
+}
+",
+        );
+        let hir = crate::hir::ned::lower_to_hir(&db, file);
+        let likes: Vec<(String, Option<String>, Option<ValueKind>)> = hir.items(&db)[0]
+            .submodules(&db)
+            .iter()
+            .map(|s| match &s.definition {
+                SubmoduleDefinition::Parametric {
+                    like_expr,
+                    like_kind,
+                    ..
+                } => (s.name.clone(), like_expr.clone(), *like_kind),
+                SubmoduleDefinition::Concrete { .. } => panic!("expected a like submodule"),
+            })
+            .collect();
+
+        assert_eq!(
+            likes,
+            vec![
+                (
+                    "a".to_string(),
+                    Some("\"UdpApp\"".to_string()),
+                    Some(ValueKind::Default)
+                ),
+                (
+                    "b".to_string(),
+                    Some("appType".to_string()),
+                    Some(ValueKind::Fixed)
+                ),
+                ("c".to_string(), None, None),
+            ]
+        );
+    }
 
     #[test]
     fn test_submodule_ast() {

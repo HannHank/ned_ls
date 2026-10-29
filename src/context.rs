@@ -20,6 +20,11 @@ pub struct ItemContext<'db> {
     pub gates: HashMap<String, ContextEntry<'db, hir::ned::GateHir<'db>>>,
     pub submodules: HashMap<String, ContextEntry<'db, hir::ned::submodules_hir::SubmoduleHir<'db>>>,
     pub ancestry: Vec<db::DefIndex<'db>>,
+    /// value of each own parameter → the most derived declaration or assignment wins.
+    pub param_values: HashMap<String, ContextEntry<'db, hir::ned::ParamBlockItem<'db>>>,
+    /// Pattern assignments to parameters of submodules (AutoTNS[*].framePreemption = true;, **.framePreemption = false;)
+    /// of the type and its base types
+    pub pattern_params: Vec<ContextEntry<'db, hir::ned::ParamBlockItem<'db>>>,
 }
 
 impl<'db> ItemContext<'db> {
@@ -30,6 +35,8 @@ impl<'db> ItemContext<'db> {
             submodules: HashMap::new(),
             types: HashMap::new(),
             ancestry: Vec::new(),
+            param_values: HashMap::new(),
+            pattern_params: Vec::new(),
         }
     }
 
@@ -140,6 +147,24 @@ pub fn merge_into_context<'db>(
     for param in item.parameters(db) {
         let name = match param {
             hir::ned::ParamBlockItem::Param(p) => {
+                // Assignments are needed later to tell whether INI can still override a value
+                if *p.pattern(db) {
+                    ctx.pattern_params.push(ContextEntry {
+                        item: param.clone(),
+                        origin,
+                    });
+                    continue;
+                }
+                if p.value(db).is_some() {
+                    ctx.param_values.insert(
+                        p.name(db).text(db).to_string(),
+                        ContextEntry {
+                            item: param.clone(),
+                            origin,
+                        },
+                    );
+                }
+
                 // Avoid overwriting definitions
                 if p.ned_type(db).is_none() {
                     continue;
@@ -270,6 +295,13 @@ pub fn combine_contexts<'db>(from: &ItemContext<'db>, into: &mut ItemContext<'db
         .extend(from.gates.iter().map(|(k, v)| (k.clone(), v.clone())));
     into.submodules
         .extend(from.submodules.iter().map(|(k, v)| (k.clone(), v.clone())));
+    into.param_values.extend(
+        from.param_values
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone())),
+    );
+    into.pattern_params
+        .extend(from.pattern_params.iter().cloned());
 }
 
 // TODO: the context of a submodule is not the outer context but the context of the type it refers
